@@ -1,0 +1,2 @@
+xref:spring-cloud-hystrix.adoc[Hystrix Server]
+

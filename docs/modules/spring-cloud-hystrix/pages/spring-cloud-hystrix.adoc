@@ -1,0 +1,263 @@
+:toc:
+
+= Circuit Breakers
+
+* In real life circuit breakers protect circuits from damage by stopping
+the overflow of current.
+* Circuit breakers are always active and monitors the system for faults.
+* When it sees no problem, it closes the circuit and resumes the process.
+* Primary benefit of circuit breakers it to reduce cascading failures.
+What this means is if there are 10 services, we don't want each of them to fail
+because the 10th service got an error. We want to have some kind of mechanism
+to protect this kind of failure and show error message or something.
+
+
+== Failures in a distributed system
+Failures are inevitable
+
+* Hardwares can fail
+* Networks can fail
+* Softwares can fail
+
+Process Communication is Also more Likely to fail
+Before we communicated within the process in monolith.
+But now we are communicating across the network.
+So there is much more likelyhood of a failure.
+
+=== Cascading Failures
+It's like a domino effect.
+Lets assume A calls B and B calls C.
+If C has some kind of failuer. Then it cannot respond in time.
+But A doesn't know that yet. It will call service B again and again.
+This will make the service B stack memory full and in turn it will fail too.
+Same goes for all other services.
+
+* Fault tolerance problem: We need to be aware of that a service is down.
+If not we will end up calling a dead service and envoking cascading problem.
+* Resource overloading problem: No resource limit can cause a problem.
+
+==== How to solve it?
+We need to learn to enbrace and `Tolerate failures` and `Gracefully degrade`
+when they do.
+* Learn to embrace failures
+** Tolerate failures
+** Garcefully degrade
+* Limit resources consumed
+* Constrain usage
+
+=== Circuit breaker pattern
+A design pattern, defined as
+
+"
+A circuit breaker is a switch that prevents too much current from flowing through a circuit. And if too much current flows through a circuit, it could cause damage or even start things on fire. And what the circuit breaker does is it prevents that by opening the circuit when it detects that there's too much current flowing through it.
+"
+
+* Detect
+* Pervent
+
+=== Netflix Hystric Project
+* Implements the circuit breaker pattern
+** Wraps calls and watches for failures
+*** 10 Sec rolling window
+*** 20 request volume
+*** >=50% error rate
+**** Circuit will be triped and request will not be responded
+** It checks if circuit should be closed in every 5 seconds
+** If request succeeds it will close the circuit
+** There is a fallback mechasim when circuit is open
+*** Cached Data, Empty value, Default response
+** It protects services from being overloaded
+*** Thread pools, semaphores & cascading failures
+* @EnableCircuitBreaker
+* @HystrixCommand
+
+=== Using Spring Cloud & Netflix Hystrix
+. Add dependency [Hystrix and Actuator]
+. @EnableCircuitBreaker at main class
+. On request call add @HystrixCommand(fallbackMetohod = "somethingElse")
+
+image::hystrixcommand.png[]
+
+image::timeouts.png[]
+
+== Spring Cloud Hystrix
+* Library for enabling resilience in microservices.
+* Supports patterns like bulkhead, fail fast, graceful degradation(fail silently with fallback response)
+* Hystrix wraps calls to external dependencies and monitors metrics in real time.
+Invokes failover method when encountering exceptions, timeouts, thread pool exhaustion, or too many previous errors.
+* Hystrix periodically sends request through to see if service has recovered.
+
+== How Spring Cloud Hystrix Works
+* Circuit breakers via annotations at class, operation level.
+* Hystrix manages the thread pool, emits metrics.
+* Dashboard integrates with Eureka to look up services.
+* Dashboard pulls metrics from instances or services.
+
+== Creating a Hystrix-Protected Service
+. Add `spring-cloud-starter-hystrix` dependency to calling service
+[NOTE]
+The service that being called don't do anything about it
+It is the service that is calling the other service implements
+circuit breakers
++
+. Annotate class with `@EnableCircuitBreaker`
+. Set up `@HystrixCommand` and define `fallback method`
+
+== Hystrix Stream and Endpoints
+State of circuit comes from /health endopoint of calling application.
+Hystrix metrics stream comes from actuator dependency.
+
+* Circuit status(Open or close) - `http://[host]:[port]/health`
+* Metrics stream(All the calls) - `http://[host]:[posrt]/hystrix.stream`
+
+== Demo 1: Adding Hystrix and Circuit Breaker Pattern
+
+In this demo, we'll build a simple weather service that returns a random weather condition, and then we'll use that in another app called the weather app that consumes that service. And in the weather app we'll protect our call to the weather service with Hystrix and implement a fallback for when the weather service is down or not responding.
+[NOTE]
+@HystrixCommand can only be used in @Component or in @Service class.
+
+. Go to spring boot initilizer and make a hystrix enabled project.
+* *Dependencies*
+* Spring Web
+* Spring Hystrix
+* Spring Boot Actuator
+* Spring Cloud Discovery Client
+. Introduce Circuit Breaker to code
+* Add to main class `@EnableHystrix`
+* Add `@HystrixCommand(fallbackMethod = "fallbackMethod")` with your `@RequestMappings`
+. Add `fallbackMethod` method in the same file with default response
+
+Now shut down one of the servies and see if the fallback response works.
+Example Project: weather-app, weather-service, discovery-server
+
+== Hystrix Dashboard
+The dashboard itself is another server with hystrix dashboard dependency
+
+image::dashboard-hystrix.png[]
+
+=== How to read Hystrix Dashboard
+image::expaining-dashboard-hystrix.png[]
+
+image::hystrix-dashboard-number.png[]
+*
+
+
+image::hystrix-dashboard.png[]
+
+
+=== Counters
+
+* Circuit: Closed = Good
+* Circuit: Opened = Bad
+
+* Success: Successful request
+* Short-Circuted: Did let pass through request
+* Bad-Request: Errors due to exceptions
+* Timeouts: Attempted but response was not received
+* Rejected: No more resources to serve the request so rejected
+* Failures:  Failed to execute because they throw an exception
+
+* Green: Success Calls
+* Blue: Rejected Calls
+* Orange: Thread timeouts
+* Purple: Thread pool rejections
+* Red: Failuers or exceptions
+* Gray: Error Percentage
+
+
+
+=== How failurs look like
+
+image::how-failurs-looks-like.png[]
+
+== Demo 2: Monitoring Fault Tollarance Using Hystrix Dashboard
+. Create a Hystrix dashboard server
+* *Dependencies*
+** Spring Web
+** Spring Hystrix Dashboard
+** Spring Boot Actuator
+** Spring Cloud Discovery Client
+. Annotate main class with `@EnableHystrixDashboard`
+. Go to `http://[host]:[port]/hystrix` (eg. http://localhost:8787/hystrix/)
+. See if you can see the dashboard.
+. Now we need to load the services
+. Go to hystrix enabled service and add `management.endpoints.web.exposure.include=*` to
+expose the `/actuator/health` and `/actuator/hystrix.stream` endpoints.
+. Add `/actuator/hystrix.stream` to the dashboard to see the data
+
+[NOTE]
+Hit the actual endpoint of service to generate some data for hystrix. Otherwise the hystrix
+dashboard will have no data to show.
+
+
+== Add Turbine to Hystrix
+What happens if we have multiple servers or instances for services?
+
+* Combine metrcis from multiple service instances
+* Integrates with Eureka to pull instance info
+* Turbine Stream uses messaging to aggregat service metrics
+Basically for different services we need to add this.
+
+=== Using Turbine Stream
+* *Server-Side*
+* It is a standalone spring boot app
+* add spring-cloud-starter-turbine stream
+* add spring-cloud-starter-stream* (*RabbitMQ or Kafka)
+* *Client-Side*
+* Add spring-cloud-starter-hystrix-stream
+* Add spring-cloud-starter-stream-* (*RabbitMq or Kafka)
+* *Dashboard*
+* Point to http://host:port of turbine app
+
+== Demo 3: Aggregating Hystrix Metrics with Turbin
+Each hystrix enabled service opens an endpoint.
+To add all these hystrix server and see them into a dashboard is
+a painful process.
+So we use Netflix Turbine to do it.
+
+
+
+. Create a new project with only `turbine` dependency
+. Add `@EnableTurbine` to the main class
+. Add some properties into the `application.properties` file
++
+.application.properties
+[source, properties]
+spring.application.name=turbine-aggregator
+server.port=3000
+eureka.client.serviceUrl.defaultZone=http://localhost:8761/eureka
+turbine.app-config=weather-app, weather-service
+turbine.cluster-name-expression='default'
+management.endpoints.web.exposure.include=*
++
+image::hystrix-tubine-configs.png[]
+
+* `turbine.app-config` takes a list of service names that you want to see in your dashboard
++
+. Send some requests to the services to generate some data for turbine.
+. Go to `http://localhost:3000/turbine.stream` to check the data.
+. Add the above url to hystrix dashboard to see all service data.
+
+[NOTE]
+Make sure your services have `@EnableHystrix`. Make sure your services have actuator and `management.endpoints.web.exposure.include=*`
+in properties files. Make sure you have `@EnabledTurbine` in your turbine server main class. Make sure you have
+refreshed your servers to generate some data for turbine.
+
+== Demo 4: Turbine Stream [with Rabbit MQ or Kafka]
+. Update Hystrix Dashboard with Turbine Dependency
+. Set applicatoin properties
+. Start up Dashboard and use Turbine endpoint
+. Create new project from Spring Intializer
+. Add Turbine Stream and RabbitMQ dependencies
+. Add Hystrix Stream and RabbitMQ dependency to client application
+. Start all proejct to hit turbine stream endpoint from dashboard
+
+== Advanced Hystrix Configuration
+* HystrixProperty settings
+* Set command properties (Timeouts, Fallouts, Threshhold)
+* Set thread poop properties
+* Use annotations or property files
+
+
+
+
