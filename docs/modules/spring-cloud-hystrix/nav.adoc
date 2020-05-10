@@ -1,2 +1,2 @@
-xref:spring-cloud-hystrix.adoc[Hystrix Server]
+* xref:spring-cloud-hystrix.adoc[Hystrix Server]
 
