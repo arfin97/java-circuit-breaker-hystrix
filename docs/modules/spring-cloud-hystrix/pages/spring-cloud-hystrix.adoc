@@ -1,5 +1,3 @@
-:toc:
-
 = Circuit Breakers
 
 * In real life circuit breakers protect circuits from damage by stopping
